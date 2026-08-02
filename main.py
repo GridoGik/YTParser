@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 import httpx
-import yt_dlp  # Новая библиотека для работы с YouTube
+import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -22,18 +22,18 @@ from telegram.request import HTTPXRequest
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-# ========== ТОКЕНЫ ==========
+# ТОКЕНЫ
 BOT_TOKEN = "8966648824:AAFN7M-t3ALQS1KzB1jX9kGSIfjQwWUCbSE"
 YOUTUBE_API_KEY = "AIzaSyDr6bMqYPUwa7BE0WgvCs_Ay6r6ImJSC-g"
 
-# ========== ПРОКСИ ==========
-PROXY_URL = ""  # например, "socks5://127.0.0.1:9050"
+# ПРОКСИ
+PROXY_URL = ""
 
 if PROXY_URL:
     os.environ["HTTP_PROXY"] = PROXY_URL
     os.environ["HTTPS_PROXY"] = PROXY_URL
 
-# ========== НАСТРОЙКИ ==========
+# НАСТРОЙКИ
 HISTORY_FILE = "history.json"
 MAX_VIDEOS_PER_SEARCH = 15
 MAX_KEYWORDS_PER_PAGE = 4
@@ -45,7 +45,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# ========== РАБОТА С ИСТОРИЕЙ ==========
+# РАБОТА С ИСТОРИЕЙ
 def load_history() -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
     try:
         with open(HISTORY_FILE, "r", encoding="utf-8") as f:
@@ -70,18 +70,16 @@ def save_user_history(user_id: int, user_data: Dict[str, List[Dict[str, Any]]]) 
     save_history(history)
 
 
-# ========== ПОЛУЧЕНИЕ СУБТИТРОВ ЧЕРЕЗ yt-dlp ==========
 def get_transcript(video_id: str) -> Optional[str]:
-    """Извлекает текст субтитров (ручных или автоматических) с помощью yt-dlp."""
     video_url = f"https://www.youtube.com/watch?v={video_id}"
     ydl_opts = {
         'skip_download': True,
         'writesubtitles': True,
-        'writeautomaticsub': True,  # включаем автоматические, если ручных нет
-        'subtitleslangs': ['ru', 'en'],  # предпочтительные языки
+        'writeautomaticsub': True,
+        'subtitleslangs': ['ru', 'en'],
         'quiet': True,
         'no_warnings': True,
-        'cookiefile': 'cookies.txt',  # <-- Путь к вашему файлу с cookies
+        'cookiefile': 'cookies.txt',  # <-- Путь к cookies
         }
 
     try:
@@ -96,10 +94,8 @@ def get_transcript(video_id: str) -> Optional[str]:
             if not subs:
                 return None
 
-            # Пытаемся получить субтитры на русском или английском
             for lang in ['ru', 'en']:
                 if lang in subs:
-                    # Берём первый доступный формат (обычно vtt или srt)
                     for fmt in subs[lang]:
                         if fmt.get('ext') in ('vtt', 'srt'):
                             data = fmt.get('data')
@@ -115,32 +111,27 @@ def get_transcript(video_id: str) -> Optional[str]:
 
 
 def parse_subtitle_data(data: str) -> str:
-    """Извлекает чистый текст из субтитров в формате vtt или srt."""
     lines = data.splitlines()
     text_lines = []
     for line in lines:
         line = line.strip()
-        # Пропускаем пустые строки и строки с временными метками
         if not line:
             continue
-        if re.match(r'^\d+$', line):  # номер кадра (srt)
+        if re.match(r'^\d+$', line):
             continue
-        if re.match(r'^\d{2}:\d{2}:\d{2}', line):  # временная метка
+        if re.match(r'^\d{2}:\d{2}:\d{2}', line):
             continue
         if line.startswith('WEBVTT') or line.startswith('Kind:'):
             continue
-        # Удаляем возможные HTML-теги
         line = re.sub(r'<[^>]+>', '', line)
         text_lines.append(line)
     return ' '.join(text_lines)
 
 
-# ========== ВЫДЕЛЕНИЕ ОТРЫВКА С КЛЮЧЕВЫМ СЛОВОМ ИЛИ ПЕРВЫХ 20 СЛОВ ==========
+# ВЫДЕЛЕНИЕ ОТРЫВКА С КЛЮЧЕВЫМ СЛОВОМ ИЛИ ПЕРВЫХ 20 СЛОВ
 def extract_transcript_snippet(transcript: str, keyword: str, context_chars: int = 150) -> str:
     if not transcript:
         return ""
-
-    # Если ключевое слово не задано — берём первые 20 слов
     if not keyword:
         words = transcript.split()
         snippet = ' '.join(words[:20])
@@ -148,7 +139,7 @@ def extract_transcript_snippet(transcript: str, keyword: str, context_chars: int
             snippet += '...'
         return snippet
 
-    # Ищем ключевое слово (регистронезависимо)
+    # (регистронезависимо)
     pattern = re.compile(re.escape(keyword), re.IGNORECASE)
     match = pattern.search(transcript)
 
@@ -163,7 +154,6 @@ def extract_transcript_snippet(transcript: str, keyword: str, context_chars: int
             snippet = snippet + '...'
         return snippet
     else:
-        # Если ключевое слово не найдено — первые 20 слов
         words = transcript.split()
         snippet = ' '.join(words[:20])
         if len(words) > 20:
@@ -171,7 +161,7 @@ def extract_transcript_snippet(transcript: str, keyword: str, context_chars: int
         return snippet
 
 
-# ========== ПАРСЕР YOUTUBE ==========
+# ПАРСЕР
 def search_youtube_videos(keyword: str, max_results: int = MAX_VIDEOS_PER_SEARCH) -> List[Dict[str, Any]]:
     youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
     try:
@@ -243,7 +233,7 @@ def format_video_message(video: Dict[str, Any], keyword: str = "") -> str:
     return msg
 
 
-# ========== ОБРАБОТЧИКИ БОТА ==========
+# ОБРАБОТЧИКИ БОТА
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     keyboard = [
         [InlineKeyboardButton("🔍 Начать парсить", callback_data="parse")],
@@ -331,7 +321,7 @@ async def stats_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def show_keyword_results(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    keyword = query.data[5:]  # убираем "show_"
+    keyword = query.data[5:]
     user_id = update.effective_user.id
     user_history = get_user_history(user_id)
     videos = user_history.get(keyword, [])
@@ -442,7 +432,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 
-# ========== ЗАПУСК ==========
+# ЗАПУСК
 def main() -> None:
     request = HTTPXRequest()
     application = (
